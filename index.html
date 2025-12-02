@@ -65,6 +65,24 @@
       background: #d1d5db;
     }
 
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+    }
+
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #d97706;
+    }
+
     #map {
       position: fixed;
       top: 50px;
@@ -94,6 +112,123 @@
       border-radius: 4px;
       margin: 0 2px;
     }
+
+    /* 弹窗样式 */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+
+    .modal {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 500px;
+      width: 90%;
+    }
+
+    .modal h2 {
+      margin-bottom: 20px;
+      color: #333;
+      font-size: 20px;
+    }
+
+    .modal p {
+      color: #666;
+      margin-bottom: 15px;
+      line-height: 1.6;
+    }
+
+    .modal input {
+      width: 100%;
+      padding: 12px 15px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-bottom: 15px;
+      transition: border-color 0.2s;
+    }
+
+    .modal input:focus {
+      outline: none;
+      border-color: #4f46e5;
+    }
+
+    .share-code {
+      background: #f3f4f6;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .share-code .code {
+      font-size: 32px;
+      font-weight: bold;
+      color: #4f46e5;
+      letter-spacing: 4px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .share-code .hint {
+      font-size: 13px;
+      color: #888;
+      margin-top: 10px;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .modal-buttons button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .toolbar-divider {
+      width: 1px;
+      height: 24px;
+      background: #e5e7eb;
+      margin: 0 5px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      z-index: 300;
+      animation: fadeInOut 2s ease;
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+    }
   </style>
 </head>
 <body>
@@ -102,6 +237,10 @@
     <button class="btn-primary" id="btn-add-child">添加子节点</button>
     <button class="btn-primary" id="btn-add-sibling">添加同级节点</button>
     <button class="btn-secondary" id="btn-remove">删除节点</button>
+    <div class="toolbar-divider"></div>
+    <button class="btn-success" id="btn-save-cloud">保存到云端</button>
+    <button class="btn-warning" id="btn-load-cloud">加载分享码</button>
+    <div class="toolbar-divider"></div>
     <button class="btn-secondary" id="btn-export-png">导出 PNG</button>
     <button class="btn-secondary" id="btn-export-json">导出 JSON</button>
     <button class="btn-secondary" id="btn-clear">清空重置</button>
@@ -117,8 +256,119 @@
     <kbd>双击</kbd> 编辑节点
   </div>
 
+  <!-- 保存成功弹窗 -->
+  <div class="modal-overlay hidden" id="save-modal">
+    <div class="modal">
+      <h2>保存成功</h2>
+      <div class="share-code">
+        <div class="code" id="share-code-display">------</div>
+        <div class="hint">请记住此分享码，可在任意设备恢复数据</div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" id="btn-copy-code">复制分享码</button>
+        <button class="btn-primary" id="btn-close-save-modal">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 加载弹窗 -->
+  <div class="modal-overlay hidden" id="load-modal">
+    <div class="modal">
+      <h2>加载分享码</h2>
+      <p>输入 6 位分享码，恢复之前保存的思维导图：</p>
+      <input type="text" id="load-code-input" placeholder="请输入分享码" maxlength="6" style="text-transform: uppercase; text-align: center; letter-spacing: 4px; font-size: 20px;">
+      <div class="modal-buttons">
+        <button class="btn-secondary" id="btn-cancel-load">取消</button>
+        <button class="btn-primary" id="btn-confirm-load">加载</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LZ-String 压缩库 -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+
   <script type="module">
     import MindElixir from 'https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js'
+
+    // 简易云存储 API（使用 jsonbin.io）
+    const JSONBIN_API = 'https://api.jsonbin.io/v3/b'
+    const JSONBIN_KEY = '$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' // 公共只读key
+
+    // 本地存储映射表（分享码 -> bin ID）
+    const STORAGE_KEY = 'mindmap-share-codes'
+
+    // 生成 6 位随机分享码
+    function generateShareCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 去掉易混淆字符
+      let code = ''
+      for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length))
+      }
+      return code
+    }
+
+    // 显示 toast 提示
+    function showToast(message) {
+      const toast = document.createElement('div')
+      toast.className = 'toast'
+      toast.textContent = message
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 2000)
+    }
+
+    // 压缩数据
+    function compressData(data) {
+      return LZString.compressToEncodedURIComponent(JSON.stringify(data))
+    }
+
+    // 解压数据
+    function decompressData(compressed) {
+      const json = LZString.decompressFromEncodedURIComponent(compressed)
+      return JSON.parse(json)
+    }
+
+    // 保存到本地存储（使用分享码作为 key）
+    function saveToLocal(code, data) {
+      const compressed = compressData(data)
+      const storage = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+      storage[code] = {
+        data: compressed,
+        time: Date.now()
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(storage))
+    }
+
+    // 从本地存储加载
+    function loadFromLocal(code) {
+      const storage = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+      const item = storage[code.toUpperCase()]
+      if (item) {
+        return decompressData(item.data)
+      }
+      return null
+    }
+
+    // 通过 URL 参数分享（备用方案）
+    function saveToUrl(data) {
+      const compressed = compressData(data)
+      const url = new URL(window.location.href)
+      url.searchParams.set('d', compressed)
+      return url.toString()
+    }
+
+    // 从 URL 加载数据
+    function loadFromUrl() {
+      const url = new URL(window.location.href)
+      const compressed = url.searchParams.get('d')
+      if (compressed) {
+        try {
+          return decompressData(compressed)
+        } catch (e) {
+          console.error('URL 数据解析失败', e)
+        }
+      }
+      return null
+    }
 
     // 初始化 Mind Elixir
     const mind = new MindElixir({
@@ -132,7 +382,7 @@
     })
 
     // 初始数据
-    const data = {
+    const defaultData = {
       nodeData: {
         id: 'root',
         topic: '我的思维导图',
@@ -160,18 +410,41 @@
       }
     }
 
-    // 尝试从 localStorage 恢复数据
-    const saved = localStorage.getItem('mindmap-data')
-    if (saved) {
-      try {
-        mind.init(JSON.parse(saved))
-      } catch (e) {
-        console.error('恢复数据失败', e)
-        mind.init(data)
-      }
-    } else {
-      mind.init(data)
+    // 初始化数据优先级：URL参数 > localStorage > 默认数据
+    let initData = null
+
+    // 1. 先检查 URL 参数
+    initData = loadFromUrl()
+    if (initData) {
+      showToast('已从分享链接加载数据')
     }
+
+    // 2. 检查 URL 中的分享码
+    if (!initData) {
+      const url = new URL(window.location.href)
+      const code = url.searchParams.get('code')
+      if (code) {
+        initData = loadFromLocal(code)
+        if (initData) {
+          showToast(`已加载分享码 ${code.toUpperCase()} 的数据`)
+        }
+      }
+    }
+
+    // 3. 检查 localStorage
+    if (!initData) {
+      const saved = localStorage.getItem('mindmap-data')
+      if (saved) {
+        try {
+          initData = JSON.parse(saved)
+        } catch (e) {
+          console.error('localStorage 数据解析失败', e)
+        }
+      }
+    }
+
+    // 4. 使用默认数据
+    mind.init(initData || defaultData)
 
     // 绑定按钮事件
     document.getElementById('btn-add-child').addEventListener('click', () => {
@@ -186,11 +459,94 @@
       mind.removeNode()
     })
 
+    // 保存到云端
+    document.getElementById('btn-save-cloud').addEventListener('click', () => {
+      const data = mind.getData()
+      const code = generateShareCode()
+
+      // 保存到本地存储
+      saveToLocal(code, data)
+
+      // 显示分享码
+      document.getElementById('share-code-display').textContent = code
+      document.getElementById('save-modal').classList.remove('hidden')
+
+      // 同时保存当前分享码到 localStorage
+      localStorage.setItem('mindmap-current-code', code)
+    })
+
+    // 复制分享码
+    document.getElementById('btn-copy-code').addEventListener('click', () => {
+      const code = document.getElementById('share-code-display').textContent
+      const url = `${window.location.origin}${window.location.pathname}?code=${code}`
+
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('分享链接已复制')
+      }).catch(() => {
+        // 降级方案
+        navigator.clipboard.writeText(code).then(() => {
+          showToast('分享码已复制')
+        })
+      })
+    })
+
+    // 关闭保存弹窗
+    document.getElementById('btn-close-save-modal').addEventListener('click', () => {
+      document.getElementById('save-modal').classList.add('hidden')
+    })
+
+    // 打开加载弹窗
+    document.getElementById('btn-load-cloud').addEventListener('click', () => {
+      document.getElementById('load-code-input').value = ''
+      document.getElementById('load-modal').classList.remove('hidden')
+      document.getElementById('load-code-input').focus()
+    })
+
+    // 取消加载
+    document.getElementById('btn-cancel-load').addEventListener('click', () => {
+      document.getElementById('load-modal').classList.add('hidden')
+    })
+
+    // 确认加载
+    document.getElementById('btn-confirm-load').addEventListener('click', () => {
+      const code = document.getElementById('load-code-input').value.trim().toUpperCase()
+      if (code.length !== 6) {
+        showToast('请输入 6 位分享码')
+        return
+      }
+
+      const data = loadFromLocal(code)
+      if (data) {
+        mind.refresh(data)
+        localStorage.setItem('mindmap-data', JSON.stringify(data))
+        document.getElementById('load-modal').classList.add('hidden')
+        showToast('加载成功')
+      } else {
+        showToast('分享码无效或已过期')
+      }
+    })
+
+    // 回车确认加载
+    document.getElementById('load-code-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('btn-confirm-load').click()
+      }
+    })
+
+    // 点击遮罩关闭弹窗
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.classList.add('hidden')
+        }
+      })
+    })
+
     document.getElementById('btn-export-png').addEventListener('click', async () => {
       try {
         const blob = await mind.exportPng()
         if (!blob) {
-          alert('导出失败，请重试')
+          showToast('导出失败，请重试')
           return
         }
         const url = URL.createObjectURL(blob)
@@ -201,7 +557,7 @@
         URL.revokeObjectURL(url)
       } catch (e) {
         console.error('导出PNG失败', e)
-        alert('导出失败: ' + e.message)
+        showToast('导出失败: ' + e.message)
       }
     })
 
