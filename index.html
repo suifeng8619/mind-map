@@ -361,6 +361,76 @@
     .error-message.show {
       display: block;
     }
+
+    .modal-wide {
+      max-width: 700px;
+    }
+
+    .mindmap-list {
+      max-height: 400px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+
+    .mindmap-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      transition: all 0.2s;
+    }
+
+    .mindmap-item:hover {
+      border-color: #4f46e5;
+      background: #f8f9ff;
+    }
+
+    .mindmap-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .mindmap-item-title {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mindmap-item-meta {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .mindmap-item-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .mindmap-item-actions button {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .empty-list {
+      text-align: center;
+      padding: 40px 20px;
+      color: #888;
+    }
+
+    .empty-list-icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+    }
+
+    .btn-small {
+      padding: 6px 12px !important;
+      font-size: 13px !important;
+    }
   </style>
 </head>
 <body>
@@ -377,6 +447,7 @@
     <button class="btn-secondary" id="btn-export-json">导出 JSON</button>
     <button class="btn-secondary" id="btn-clear">清空重置</button>
     <div class="toolbar-right">
+      <button class="btn-primary hidden" id="btn-my-maps">我的脑图</button>
       <div class="user-info hidden" id="user-info">
         <span class="user-email" id="user-email"></span>
         <button class="btn-danger" id="btn-logout">退出</button>
@@ -419,6 +490,38 @@
       <div class="modal-buttons">
         <button class="btn-secondary" id="btn-cancel-load">取消</button>
         <button class="btn-primary" id="btn-confirm-load">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的脑图弹窗 -->
+  <div class="modal-overlay hidden" id="my-maps-modal">
+    <div class="modal modal-wide">
+      <h2>我的脑图</h2>
+      <div class="mindmap-list" id="mindmap-list">
+        <div class="empty-list">
+          <div class="empty-list-icon">📝</div>
+          <p>暂无保存的脑图</p>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" id="btn-close-my-maps">关闭</button>
+        <button class="btn-primary" id="btn-new-map">新建脑图</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存脑图弹窗 -->
+  <div class="modal-overlay hidden" id="save-name-modal">
+    <div class="modal">
+      <h2>保存脑图</h2>
+      <div class="form-group">
+        <label>脑图名称</label>
+        <input type="text" id="save-map-title" placeholder="请输入脑图名称">
+      </div>
+      <div class="modal-buttons">
+        <button class="btn-secondary" id="btn-cancel-save-name">取消</button>
+        <button class="btn-primary" id="btn-confirm-save-name">保存</button>
       </div>
     </div>
   </div>
@@ -487,14 +590,17 @@
       const loginBtn = document.getElementById('btn-login')
       const userInfo = document.getElementById('user-info')
       const userEmail = document.getElementById('user-email')
+      const myMapsBtn = document.getElementById('btn-my-maps')
 
       if (currentUser) {
         loginBtn.classList.add('hidden')
         userInfo.classList.remove('hidden')
+        myMapsBtn.classList.remove('hidden')
         userEmail.textContent = currentUser.email
       } else {
         loginBtn.classList.remove('hidden')
         userInfo.classList.add('hidden')
+        myMapsBtn.classList.add('hidden')
       }
     }
 
@@ -543,17 +649,21 @@
       bar.className = 'status-bar ' + type
     }
 
+    // 当前脑图标题
+    let currentMapTitle = '未命名脑图'
+
     // 保存到 Supabase
-    async function saveToCloud(data, existingId = null) {
+    async function saveToCloud(data, existingId = null, title = null) {
       try {
         const id = existingId || generateShortId()
         const userId = currentUser?.id || null
+        const mapTitle = title || currentMapTitle
 
         if (existingId) {
           // 更新现有记录
           const { error } = await supabase
             .from('mindmaps')
-            .update({ data: data, user_id: userId })
+            .update({ data: data, user_id: userId, title: mapTitle })
             .eq('id', id)
 
           if (error) throw error
@@ -561,22 +671,146 @@
           // 插入新记录
           const { error } = await supabase
             .from('mindmaps')
-            .insert({ id: id, data: data, user_id: userId })
+            .insert({ id: id, data: data, user_id: userId, title: mapTitle })
 
           if (error) {
             // 如果 ID 冲突，生成新 ID 重试
             if (error.code === '23505') {
-              return saveToCloud(data, null)
+              return saveToCloud(data, null, title)
             }
             throw error
           }
         }
 
+        currentMapTitle = mapTitle
         return id
       } catch (e) {
         console.error('云端保存失败:', e)
         return null
       }
+    }
+
+    // 获取用户的脑图列表
+    async function getMyMindmaps() {
+      if (!currentUser) return []
+
+      try {
+        const { data, error } = await supabase
+          .from('mindmaps')
+          .select('id, title, created_at, updated_at')
+          .eq('user_id', currentUser.id)
+          .order('updated_at', { ascending: false })
+
+        if (error) throw error
+        return data || []
+      } catch (e) {
+        console.error('获取脑图列表失败:', e)
+        return []
+      }
+    }
+
+    // 删除脑图
+    async function deleteMindmap(id) {
+      try {
+        const { error } = await supabase
+          .from('mindmaps')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+        return true
+      } catch (e) {
+        console.error('删除脑图失败:', e)
+        return false
+      }
+    }
+
+    // 渲染脑图列表
+    function renderMindmapList(maps) {
+      const container = document.getElementById('mindmap-list')
+
+      if (maps.length === 0) {
+        container.innerHTML = `
+          <div class="empty-list">
+            <div class="empty-list-icon">📝</div>
+            <p>暂无保存的脑图</p>
+          </div>
+        `
+        return
+      }
+
+      container.innerHTML = maps.map(map => `
+        <div class="mindmap-item" data-id="${map.id}">
+          <div class="mindmap-item-info">
+            <div class="mindmap-item-title">${map.title || '未命名脑图'}</div>
+            <div class="mindmap-item-meta">
+              更新于 ${new Date(map.updated_at).toLocaleString('zh-CN')}
+            </div>
+          </div>
+          <div class="mindmap-item-actions">
+            <button class="btn-primary btn-small btn-open-map" data-id="${map.id}">打开</button>
+            <button class="btn-secondary btn-small btn-share-map" data-id="${map.id}">分享</button>
+            <button class="btn-danger btn-small btn-delete-map" data-id="${map.id}">删除</button>
+          </div>
+        </div>
+      `).join('')
+
+      // 绑定事件
+      container.querySelectorAll('.btn-open-map').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id
+          showToast('正在加载...')
+          const data = await loadFromCloud(id)
+          if (data) {
+            mind.refresh(data)
+            currentCloudId = id
+            // 获取标题
+            const map = maps.find(m => m.id === id)
+            currentMapTitle = map?.title || '未命名脑图'
+            localStorage.setItem('mindmap-data', JSON.stringify(data))
+            localStorage.setItem('mindmap-cloud-id', id)
+            document.getElementById('my-maps-modal').classList.add('hidden')
+            showToast('加载成功')
+            updateStatus(`${currentMapTitle} (ID: ${id})`, 'saved')
+          } else {
+            showToast('加载失败')
+          }
+        })
+      })
+
+      container.querySelectorAll('.btn-share-map').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.id
+          const url = generateShareUrl(id)
+          navigator.clipboard.writeText(url).then(() => {
+            showToast('分享链接已复制')
+          }).catch(() => {
+            prompt('分享链接:', url)
+          })
+        })
+      })
+
+      container.querySelectorAll('.btn-delete-map').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id
+          if (confirm('确定要删除这个脑图吗？')) {
+            const success = await deleteMindmap(id)
+            if (success) {
+              showToast('删除成功')
+              // 如果删除的是当前脑图，清除本地状态
+              if (id === currentCloudId) {
+                currentCloudId = null
+                localStorage.removeItem('mindmap-cloud-id')
+              }
+              // 刷新列表
+              const newMaps = await getMyMindmaps()
+              renderMindmapList(newMaps)
+            } else {
+              showToast('删除失败')
+            }
+          }
+        })
+      })
     }
 
     // 从 Supabase 加载
@@ -1028,6 +1262,66 @@
     })
     document.getElementById('register-password-confirm').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') document.getElementById('btn-do-register').click()
+    })
+
+    // ========== 我的脑图功能 ==========
+
+    // 打开我的脑图弹窗
+    document.getElementById('btn-my-maps').addEventListener('click', async () => {
+      document.getElementById('my-maps-modal').classList.remove('hidden')
+      showToast('正在加载...')
+      const maps = await getMyMindmaps()
+      renderMindmapList(maps)
+    })
+
+    // 关闭我的脑图弹窗
+    document.getElementById('btn-close-my-maps').addEventListener('click', () => {
+      document.getElementById('my-maps-modal').classList.add('hidden')
+    })
+
+    // 新建脑图
+    document.getElementById('btn-new-map').addEventListener('click', () => {
+      document.getElementById('my-maps-modal').classList.add('hidden')
+      document.getElementById('save-map-title').value = ''
+      document.getElementById('save-name-modal').classList.remove('hidden')
+      document.getElementById('save-map-title').focus()
+    })
+
+    // 取消保存脑图
+    document.getElementById('btn-cancel-save-name').addEventListener('click', () => {
+      document.getElementById('save-name-modal').classList.add('hidden')
+    })
+
+    // 确认保存脑图（新建）
+    document.getElementById('btn-confirm-save-name').addEventListener('click', async () => {
+      const title = document.getElementById('save-map-title').value.trim() || '未命名脑图'
+
+      // 创建新脑图
+      const newData = MindElixir.new('新的思维导图')
+      mind.init(newData)
+
+      updateStatus('正在保存到云端...', 'saving')
+
+      // 创建新记录（不复用旧 ID）
+      const savedId = await saveToCloud(newData, null, title)
+
+      if (savedId) {
+        currentCloudId = savedId
+        currentMapTitle = title
+        localStorage.setItem('mindmap-cloud-id', savedId)
+        localStorage.setItem('mindmap-data', JSON.stringify(newData))
+        document.getElementById('save-name-modal').classList.add('hidden')
+        showToast('新建成功')
+        updateStatus(`${title} (ID: ${savedId})`, 'saved')
+      } else {
+        showToast('保存失败，请重试')
+        updateStatus('保存失败', '')
+      }
+    })
+
+    // 回车确认保存
+    document.getElementById('save-map-title').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('btn-confirm-save-name').click()
     })
   </script>
 </body>
