@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>思维导图</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir/dist/style.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+    }
+
+    .toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 50px;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 10px;
+      z-index: 100;
+    }
+
+    .toolbar h1 {
+      font-size: 18px;
+      color: #333;
+      margin-right: 30px;
+    }
+
+    .toolbar button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #4f46e5;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #4338ca;
+    }
+
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    #map {
+      position: fixed;
+      top: 50px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100%;
+      height: calc(100vh - 50px);
+    }
+
+    .tips {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.8;
+      z-index: 100;
+    }
+
+    .tips kbd {
+      background: rgba(255,255,255,0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin: 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>思维导图</h1>
+    <button class="btn-primary" id="btn-add-child">添加子节点</button>
+    <button class="btn-primary" id="btn-add-sibling">添加同级节点</button>
+    <button class="btn-secondary" id="btn-remove">删除节点</button>
+    <button class="btn-secondary" id="btn-export-png">导出 PNG</button>
+    <button class="btn-secondary" id="btn-export-json">导出 JSON</button>
+    <button class="btn-secondary" id="btn-clear">清空重置</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="tips">
+    <strong>快捷键：</strong><br>
+    <kbd>Tab</kbd> 添加子节点 &nbsp;
+    <kbd>Enter</kbd> 添加同级节点<br>
+    <kbd>Delete</kbd> 删除节点 &nbsp;
+    <kbd>双击</kbd> 编辑节点
+  </div>
+
+  <script type="module">
+    import MindElixir from 'https://cdn.jsdelivr.net/npm/mind-elixir/dist/MindElixir.js'
+
+    // 初始化 Mind Elixir
+    const mind = new MindElixir({
+      el: '#map',
+      direction: MindElixir.SIDE,
+      draggable: true,
+      contextMenu: true,
+      toolBar: true,
+      nodeMenu: true,
+      keypress: true,
+    })
+
+    // 初始数据
+    const data = {
+      nodeData: {
+        id: 'root',
+        topic: '我的思维导图',
+        children: [
+          {
+            id: 'sub1',
+            topic: '主题 1',
+            children: [
+              { id: 'sub1-1', topic: '子主题 1-1' },
+              { id: 'sub1-2', topic: '子主题 1-2' },
+            ]
+          },
+          {
+            id: 'sub2',
+            topic: '主题 2',
+            children: [
+              { id: 'sub2-1', topic: '子主题 2-1' },
+            ]
+          },
+          {
+            id: 'sub3',
+            topic: '主题 3',
+          },
+        ]
+      }
+    }
+
+    // 尝试从 localStorage 恢复数据
+    const saved = localStorage.getItem('mindmap-data')
+    if (saved) {
+      try {
+        mind.init(JSON.parse(saved))
+      } catch (e) {
+        console.error('恢复数据失败', e)
+        mind.init(data)
+      }
+    } else {
+      mind.init(data)
+    }
+
+    // 绑定按钮事件
+    document.getElementById('btn-add-child').addEventListener('click', () => {
+      mind.addChild()
+    })
+
+    document.getElementById('btn-add-sibling').addEventListener('click', () => {
+      mind.insertSibling()
+    })
+
+    document.getElementById('btn-remove').addEventListener('click', () => {
+      mind.removeNode()
+    })
+
+    document.getElementById('btn-export-png').addEventListener('click', async () => {
+      try {
+        const blob = await mind.exportPng()
+        if (!blob) {
+          alert('导出失败，请重试')
+          return
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'mindmap.png'
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (e) {
+        console.error('导出PNG失败', e)
+        alert('导出失败: ' + e.message)
+      }
+    })
+
+    document.getElementById('btn-export-json').addEventListener('click', () => {
+      const data = mind.getData()
+      const json = JSON.stringify(data, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'mindmap.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      if (confirm('确定要清空所有内容吗？')) {
+        const newData = MindElixir.new('新的思维导图')
+        mind.init(newData)
+        localStorage.removeItem('mindmap-data')
+      }
+    })
+
+    // 自动保存到 localStorage
+    mind.bus.addListener('operation', (operation) => {
+      localStorage.setItem('mindmap-data', JSON.stringify(mind.getData()))
+    })
+  </script>
+</body>
+</html>
