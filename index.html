@@ -725,6 +725,27 @@
       }
     }
 
+    // 重命名脑图
+    async function renameMindmap(id, newTitle) {
+      try {
+        const { error } = await supabase
+          .from('mindmaps')
+          .update({ title: newTitle })
+          .eq('id', id)
+
+        if (error) throw error
+        // 如果重命名的是当前脑图，更新标题
+        if (id === currentCloudId) {
+          currentMapTitle = newTitle
+          updateStatus(`${newTitle} (ID: ${id})`, 'saved')
+        }
+        return true
+      } catch (e) {
+        console.error('重命名失败:', e)
+        return false
+      }
+    }
+
     // 渲染脑图列表
     function renderMindmapList(maps) {
       const container = document.getElementById('mindmap-list')
@@ -749,6 +770,7 @@
           </div>
           <div class="mindmap-item-actions">
             <button class="btn-primary btn-small btn-open-map" data-id="${map.id}">打开</button>
+            <button class="btn-warning btn-small btn-rename-map" data-id="${map.id}" data-title="${map.title || '未命名脑图'}">重命名</button>
             <button class="btn-secondary btn-small btn-share-map" data-id="${map.id}">分享</button>
             <button class="btn-danger btn-small btn-delete-map" data-id="${map.id}">删除</button>
           </div>
@@ -807,6 +829,25 @@
               renderMindmapList(newMaps)
             } else {
               showToast('删除失败')
+            }
+          }
+        })
+      })
+
+      // 重命名按钮
+      container.querySelectorAll('.btn-rename-map').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id
+          const oldTitle = btn.dataset.title
+          const newTitle = prompt('请输入新名称:', oldTitle)
+          if (newTitle && newTitle.trim() && newTitle !== oldTitle) {
+            const success = await renameMindmap(id, newTitle.trim())
+            if (success) {
+              showToast('重命名成功')
+              const newMaps = await getMyMindmaps()
+              renderMindmapList(newMaps)
+            } else {
+              showToast('重命名失败')
             }
           }
         })
@@ -1131,18 +1172,30 @@
       }
     })
 
-    // 自动保存到 localStorage
+    // 自动保存（本地 + 云端）
     let saveTimeout = null
     mind.bus.addListener('operation', (operation) => {
-      // 防抖：500ms 内只保存一次
+      // 防抖：1秒内只保存一次
       if (saveTimeout) clearTimeout(saveTimeout)
 
       updateStatus('正在保存...', 'saving')
 
-      saveTimeout = setTimeout(() => {
-        localStorage.setItem('mindmap-data', JSON.stringify(mind.getData()))
-        updateStatus('已自动保存', 'saved')
-      }, 500)
+      saveTimeout = setTimeout(async () => {
+        const data = mind.getData()
+        localStorage.setItem('mindmap-data', JSON.stringify(data))
+
+        // 如果已登录且有云端ID，自动同步到云端
+        if (currentUser && currentCloudId) {
+          const savedId = await saveToCloud(data, currentCloudId)
+          if (savedId) {
+            updateStatus(`已同步到云端 (${currentMapTitle})`, 'saved')
+          } else {
+            updateStatus('云端同步失败，已保存到本地', 'saved')
+          }
+        } else {
+          updateStatus('已自动保存到本地', 'saved')
+        }
+      }, 1000)
     })
 
     // ========== 登录/注册功能 ==========
